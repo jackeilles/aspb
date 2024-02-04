@@ -106,3 +106,7 @@ class File():
                 # If no date is found, we use the current date
                 self.date = datetime.datetime.now().strftime('%d.%m.%Y')
                 self.date_format = 'dmy'
+
+            # Author
+            if re.match(r'^>>> author ', lines[2]):
+                self.author = lines[2][10:]
