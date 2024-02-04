@@ -110,3 +110,13 @@ class File():
             # Author
             if re.match(r'^>>> author ', lines[2]):
                 self.author = lines[2][10:]
+
+    
+def parse_args():
+    """ Parse the command line arguments """
+    parser = argparse.ArgumentParser(description="Another static page builder")
+    parser.add_argument('-i', '--input', help="Input file", required=True)
+    parser.add_argument('-o', '--output', help="Output file")
+    parser.add_argument('-v', '--version', help="Print the version", action="store_true")
+    parser.add_argument('-m', '--meta', help="Specify a custom meta file path")
+    return parser.parse_args()
