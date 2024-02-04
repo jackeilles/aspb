@@ -4,106 +4,105 @@
 
 import os
 import re
+import argparse
+import datetime
+import json
+from dataclasses import dataclass
 
-def get_md(path):
-    """Returns the contents of a markdown file with split lines."""
-    with open(path, 'r') as f:
-        return f.read().splitlines()
+@dataclass
+class Colours:
+    """This is a class to hold the ascii escape sequences for printing colours."""
+
+    red: str = "\033[31m"
+    endc: str = "\033[m"
+    green: str = "\033[32m"
+    yellow: str = "\033[33m"
+    blue: str = "\033[34m"
+
+
+class Common():
+    """ This class just contains some common functions to be used around the program. """
+
+    def __init__(self):
+        pass
+
+    def die(self, message):
+        """ Print a message and exit the program. """
+        print(f"{Colours.red}Error:{Colours.endc} {message}")
+        exit(1)
     
-def get_md_files(path):
-    """To be used on a directory consisting of only markdown files."""
-    return [os.path.join(path, f) for f in os.listdir(path) if f.endswith('.md')]
+class File():
+    """ 
+    Stores data about an imported file
+    This data is then used when writing the
+    final HTML file.
+    """
 
-def find_id(line):
-    start = line.find("{#")
-    end = line.find("}")
-    if start != -1 and end != -1:
-        return line[start+2:end], start
-    else:
-        return None
+    def __init__(self, filename, md):
+        self.common = Common()
+        self.filename = filename
+        self.md = md
+        self.html = None
+        self.title = None
+        self.date = None
+        self.date_format = None
+        self.author = None
 
-def convert_md_to_html(path):
-    """Converts markdown to html."""
-    md = get_md(path)
-    html = []
-    prev_line = '' # Used for multiline md elements
+    def __str__(self):
+        return f"{self.filename} {self.title} {self.date} {self.author}"
+    
+    def __repr__(self):
+        return f"File({self.filename}, {self.title}, {self.date}, {self.author})"
 
-    for line in md:
-        match(line):
-            # Headings
-            case line.startswith('#'):
-                id, start = find_id(line)
-                if id:
-                    html.append(f'<h1 id="{id}">{line[start+2:]}</h1>')
-                else:
-                    html.append(f'<h1>{line[1:]}</h1>')
-            case line.startswith('##'):
-                id, start = find_id(line)
-                if id:
-                    html.append(f'<h2 id="{id}">{line[start+3:]}</h2>')
-                else:
-                    html.append(f'<h2>{line[2:]}</h2>')
-            case line.startswith('###'):
-                id, start = find_id(line)
-                if id:
-                    html.append(f'<h3 id="{id}">{line[start+4:]}</h3>')
-                else:
-                    html.append(f'<h3>{line[3:]}</h3>')
+    def read_file(self, filename):
+        """ Read a file and return its contents with splitlines """
+        with open(filename, 'r', encoding='utf-8') as f:
+            return f.read().splitlines()
+        
+    def write_html(self, filename, html):
+        """ Write html to a file """
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html)
 
-            # Blockquotes
-            case line.startswith('>'):
-                if prev_line.startswith('>'):
-                    html.append(f'\n<p>{line[2:]}</p>')
-                else:
-                    html.append(f'<blockquote>\n<p>{line[2:]}</p>')
+    def get_metadata(self, lines):
+        """ 
+        Get the metadata of the file. 
+        Can either be found in the file at the top or in a .meta file.
+        The .meta files will be JSON formatted.
+        """
+        if os.path.exists(f"./{self.filename}.meta"):
+            try:
+                with open(f"./{self.filename}.meta", 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                    self.title = metadata['title']
+                    self.date = metadata['date']
+                    self.author = metadata['author']
+            except json.JSONDecodeError:
+                self.common.die("Error reading .meta file")
 
-            # Unordered List
-            case line.startswith('-'):
-                if prev_line.startswith('-'):
-                    html.append(f'\n<li>{line[2:]}</li>')
-                else:
-                    html.append(f'<ul>\n<li>{line[2:]}</li>')
+        else:
+            # Title
+            if re.match(r'^>>> ', lines[0]):
+                self.title = lines[0][4:]
+            else:
+                self.title = self.filename.split('.')[0]
 
-            # Ordered List
-            case re.match(r'^\d+\.', line): # i hate regex
-                if prev_line and re.match(r'^\d+\.', prev_line):
-                    html.append(f'\n<li>{line.split(".", 1)[1].strip()}</li>')
-                else:
-                    html.append(f'<ol>\n<li>{line.split(".", 1)[1].strip()}</li>')
-
-            # Single line code block
-            case line.startswith('`'):
-                html.append(f'<code>{line[1:]}</code>'.strip("`"))
-
-            # Multiline code block
-            case line.startswith('```'):
-                if prev_line.startswith('```'):
-                    html.append(f'\n</code>')
-                else:
-                    html.append(f'<code>')
-
-            # Break
-            case line.startswith('---'):
-                html.append(f'<hr>')
-
-            # Links
-            case re.match(r'^\[.*\]\(.*\)', line):
-                html.append(f'<a href="{line.split("](", 1)[1].strip(")")}">{line.split("[", 1)[1].split("]")[0]}</a>')
-            
-            # Images
-            case re.match(r'^!\[.*\]\(.*\)', line):
-                html.append(f'<img src="{line.split("](", 1)[1].strip(")")}">')
-
-            case line.startswith(''):
-                if prev_line.startswith('>'):
-                    html.append(f'\n</blockquote>')
-                elif prev_line.startswith('-'):
-                    html.append(f'\n</ul>')
-                elif re.match(r'^\d+\.', prev_line):
-                    html.append(f'\n</ol>')
-                elif prev_line.startswith('```'):
-                    html.append(f'\n</code>')
-            
-            
-
-            
+            # Date
+            # Check date formatting (can be DD.MM.YYYY, MM.DD.YYYY or YYYY.MM.DD)
+            # We grab this from a date code, for example '>>> dmy 01.01.2024'
+            if re.match(r'^>>> dmy (\d{2}\.\d{2}\.\d{4})', lines[1]):
+                self.date = lines[1][8:]
+                self.date_format = 'dmy'
+            elif re.match(r'^>>> mdy (\d{2}\.\d{2}\.\d{4})', lines[1]):
+                self.date = lines[1][8:]
+                self.date_format = 'mdy'
+            elif re.match(r'^>>> ymd (\d{2}\.\d{2}\.\d{4})', lines[1]):
+                self.date = lines[1][8:]
+                self.date_format = 'ymd'
+            elif re.match(r'^>>> (\d{2}\.\d{2}\.\d{4})', lines[1]): # This statement is for when a date code is not specified.
+                self.date = lines[1][4:]
+                self.date_format = 'dmy'
+            else:
+                # If no date is found, we use the current date
+                self.date = datetime.datetime.now().strftime('%d.%m.%Y')
+                self.date_format = 'dmy'
